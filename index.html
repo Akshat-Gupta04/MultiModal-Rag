@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YouTube Multi-Modal RAG</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+  <style>
+    body {
+      background-color: #f0f2f5;
+    }
+
+    .section {
+      padding: 60px 20px;
+    }
+
+    .error {
+      display: none;
+      color: red;
+    }
+
+    .result-card {
+      margin-bottom: 20px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+      border: none;
+    }
+
+    .loading, .query-loading {
+      display: none;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 1000;
+    }
+
+    .progress {
+      width: 300px;
+      height: 20px;
+      margin-top: 20px;
+    }
+
+    .spinner-border {
+      width: 3rem;
+      height: 3rem;
+    }
+
+    .query-progress {
+      display: none;
+      width: 300px;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar navbar-dark bg-dark">
+    <div class="container">
+      <a class="navbar-brand" href="#">YouTube RAG</a>
+    </div>
+  </nav>
+
+  <div class="container section" id="home">
+    <h2 class="mb-4">Analyze YouTube Video</h2>
+    <div class="input-group mb-3">
+      <input type="text" class="form-control" id="url-input" placeholder="Enter YouTube URL" />
+      <button class="btn btn-primary" onclick="previewVideo()">Preview</button>
+    </div>
+    <div class="error" id="url-error">Invalid YouTube URL</div>
+
+    <div id="preview" style="display: none;">
+      <h4 class="mt-4">Preview</h4>
+      <div class="ratio ratio-16x9">
+        <iframe id="video-iframe" src="" allowfullscreen></iframe>
+      </div>
+      <button class="btn btn-success mt-3" onclick="processVideo()">Process</button>
+    </div>
+  </div>
+
+  <!-- Loading screen for video processing -->
+  <div class="loading" id="loading">
+    <div class="text-white text-center">
+      <div class="spinner-border" role="status"></div>
+      <h4 class="mt-3">Processing Video...</h4>
+      <div class="progress">
+        <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" style="width: 100%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Query Section -->
+  <div class="container section" id="query" style="display: none;">
+    <h2 class="mb-4">Query Video</h2>
+    <div class="input-group mb-3">
+      <input type="text" class="form-control" id="query-input" placeholder="Enter query (e.g., 'astronaut spacewalk')" />
+      <button class="btn btn-primary" onclick="queryVideo()">Search</button>
+    </div>
+    <div class="error" id="query-error">Enter a query</div>
+    <div class="query-loading" id="query-loading">
+      <div class="text-white text-center">
+        <div class="spinner-border" role="status"></div>
+        <h4 class="mt-3">Searching...</h4>
+        <div class="progress query-progress">
+          <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" id="query-progress-bar"></div>
+        </div>
+      </div>
+    </div>
+    <div id="results" class="row"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    function getVideoId(url) {
+      const match = url.match(
+        /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/
+      );
+      return match ? match[1] : null;
+    }
+
+    function previewVideo() {
+      const url = document.getElementById("url-input").value;
+      const videoId = getVideoId(url);
+      const error = document.getElementById("url-error");
+
+      if (!videoId) {
+        error.style.display = "block";
+        return;
+      }
+
+      error.style.display = "none";
+      document.getElementById("video-iframe").src = `https://www.youtube.com/embed/${videoId}`;
+      document.getElementById("preview").style.display = "block";
+    }
+
+    async function processVideo() {
+      const url = document.getElementById("url-input").value;
+      const videoId = getVideoId(url);
+      const error = document.getElementById("url-error");
+
+      if (!videoId) {
+        error.style.display = "block";
+        return;
+      }
+
+      error.style.display = "none";
+      document.getElementById("home").style.display = "none";
+      document.getElementById("loading").style.display = "flex";
+
+      try {
+        const response = await fetch(`/process-video`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ youtube_url: url }),
+        });
+
+        const data = await response.json();
+
+        document.getElementById("loading").style.display = "none";
+
+        if (data.success) {
+          document.getElementById("query").style.display = "block";
+        } else {
+          throw new Error(data.error || "Processing failed");
+        }
+      } catch (e) {
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("home").style.display = "block";
+        error.textContent = e.message;
+        error.style.display = "block";
+      }
+    }
+
+    async function queryVideo() {
+      const query = document.getElementById("query-input").value;
+      const queryError = document.getElementById("query-error");
+      const queryLoading = document.getElementById("query-loading");
+      const queryProgressBar = document.getElementById("query-progress-bar");
+
+      if (!query) {
+        queryError.style.display = "block";
+        return;
+      }
+
+      queryError.style.display = "none";
+      queryLoading.style.display = "flex";
+      let progress = 0;
+      queryProgressBar.style.width = "0%";
+
+      // Simulate progress (adjust duration based on expected query time, e.g., 3 seconds)
+      const interval = setInterval(() => {
+        progress += 10;
+        queryProgressBar.style.width = `${progress}%`;
+        if (progress >= 100) clearInterval(interval);
+      }, 300); // 300ms per 10% = 3 seconds total
+
+      try {
+        const response = await fetch(`/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+
+        const data = await response.json();
+
+        clearInterval(interval);
+        queryLoading.style.display = "none";
+
+        if (data.results) {
+          const resultsDiv = document.getElementById("results");
+          resultsDiv.innerHTML = data.results
+            .map(
+              (r, i) => `
+              <div class="col-md-4">
+                <div class="card result-card">
+                  <img src="${r.image_path}" class="card-img-top" />
+                  <div class="card-body">
+                    <h5>Result ${i + 1}</h5>
+                    <p>${r.caption}</p>
+                  </div>
+                </div>
+              </div>
+            `
+            )
+            .join("");
+        } else {
+          throw new Error(data.error || "No results found");
+        }
+      } catch (e) {
+        clearInterval(interval);
+        queryLoading.style.display = "none";
+        queryError.textContent = e.message;
+        queryError.style.display = "block";
+      }
+    }
+  </script>
+</body>
+</html>
